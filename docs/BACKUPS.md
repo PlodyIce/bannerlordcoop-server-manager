@@ -173,6 +173,14 @@ and new campaign files if anything went wrong halfway through. So:
 If a rename fails partway through, the ones already done are undone and the
 previous state is put back. There is no half-restored outcome.
 
+A backup made on another machine carries that machine's `server.env`. A
+few of its settings describe the machine rather than the server: the
+installation directory, the instance name, the numeric IDs of the service
+user (`PUID`, `PGID`) and the Steam account whose session is stored here.
+The restore keeps this host's values for those and takes everything else
+from the backup. Taking the other machine's user IDs would leave the server
+unable to read its own configuration.
+
 ### Ownership
 
 Step 8 matters more than it looks. A tar archive carries the numeric user

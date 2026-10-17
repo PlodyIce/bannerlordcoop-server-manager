@@ -26,6 +26,15 @@
 # instant and, crucially, reversible.
 
 readonly BACKUP_DIRS=(saves config coopdata)
+
+# Settings that describe the host rather than the server: where the
+# installation lives, its name, the numeric ids of the service user, and the
+# Steam account whose session is in state/. A backup from another machine
+# carries that machine's values, and a restore keeps this one's. Taking the
+# backup's would point the manager at another directory, or hand files to a
+# user id that does not exist here: measured, the service user is 988 on one
+# test host and 999 on the other.
+readonly BACKUP_HOST_SETTINGS=(INSTALL_DIR INSTANCE_ID PUID PGID STEAM_USERNAME)
 readonly BACKUP_TYPES=(auto manual pre-update pre-restore)
 
 _backup_keep_for() {
@@ -470,6 +479,10 @@ backup_restore() {
     out_line ""
     confirm "Continue?" no || { log "Cancelled."; return 0; }
 
+    local key
+    local -A host_values=()
+    for key in "${BACKUP_HOST_SETTINGS[@]}"; do host_values[$key]="$(cfg "$key")"; done
+
     # 1. staging on the same filesystem, so the swap below is a rename
     make_temp_dir "$INSTALL_DIR" staging
     log "Unpacking to a staging directory"
@@ -516,8 +529,10 @@ backup_restore() {
     chown -R "$(cfg PUID):$(cfg PGID)" \
         "$DIR_SAVES" "$DIR_CONFIG" "$DIR_COOPDATA" 2>/dev/null || true
 
-    # 6. the restored config is now the truth - reload and regenerate
+    # 6. the restored config is now the truth - reload and regenerate.
+    #    The settings that describe this host stay as they were.
     CFG=(); config_load
+    _backup_keep_host_settings host_values
     config_write_compose_env
     server_config_render
 
@@ -546,6 +561,26 @@ backup_restore() {
     out_line "      coop logs"
     out_line "      coop backup list"
     return "$EX_HEALTH"
+}
+
+# _backup_keep_host_settings <name of an associative array>
+#
+# After a restored server.env has been loaded: puts back this host's value
+# of every setting in BACKUP_HOST_SETTINGS where the backup's differs, and
+# writes them to server.env. An empty value of this host's is not kept, so
+# a host without a Steam account takes the backup's.
+_backup_keep_host_settings() {
+    local -n _host="$1"
+    local key kept=()
+    for key in "${BACKUP_HOST_SETTINGS[@]}"; do
+        [[ -n "${_host[$key]:-}" && "$(cfg "$key")" != "${_host[$key]}" ]] || continue
+        log "Keeping this host's $key, ${_host[$key]}; the backup has $(cfg "$key")."
+        cfg_set "$key" "${_host[$key]}"
+        kept+=("$key")
+    done
+    (( ${#kept[@]} )) || return 0
+    config_derive_paths
+    config_persist "$FILE_CONFIG" "${kept[@]}"
 }
 
 _restore_rollback() {

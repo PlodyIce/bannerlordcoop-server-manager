@@ -162,6 +162,21 @@ campaign_settle_new_world
 [[ -z "$(state_get new_world)" ]] || nok "a new world that exists is still marked as pending"
 pass "a missing save starts only when a new world was asked for"
 
+# --------------------------------------------------------------- restore --
+# A backup from another machine brings that machine's server.env. What
+# describes the host has to stay this host's; the rest is the backup's.
+config_write_new "$FILE_CONFIG"
+declare -A this_host=([INSTALL_DIR]="$INSTALL_DIR" [INSTANCE_ID]=default [PUID]=999 [PGID]=982 [STEAM_USERNAME]=here)
+cfg_set PUID 988; cfg_set PGID 988; cfg_set STEAM_USERNAME there; cfg_set INSTANCE_ID other
+cfg_set INSTALL_DIR /srv/elsewhere; cfg_set SAVE_NAME "From Backup"
+_backup_keep_host_settings this_host >/dev/null 2>&1
+[[ "$(cfg PUID):$(cfg PGID):$(cfg STEAM_USERNAME):$(cfg INSTANCE_ID)" == "999:982:here:default" ]] \
+    || nok "a restore adopted the other host's ids, account or instance"
+[[ "$INSTALL_DIR" == "$T/inst" && "$DIR_SAVES" == "$T/inst/saves" ]] || nok "a restore moved the installation's paths"
+[[ "$(cfg SAVE_NAME)" == "From Backup" ]] || nok "a restore dropped a setting that belongs to the backup"
+grep -qx 'PUID="999"' "$FILE_CONFIG" || nok "the host's values were not written to server.env"
+pass "a restore keeps this host's directory, instance, user ids and Steam account"
+
 # --------------------------------------------------------- login message --
 # Rendered the way provision_install_motd renders it, then run with sh, as
 # update-motd would. A path with a quote and a space must survive.
