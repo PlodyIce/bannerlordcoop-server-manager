@@ -451,13 +451,13 @@ The manager has its own version, separate from the Coop mod:
 
 ```
 $ coop version
-Bannerlord Coop Server Manager v0.2.2
+Bannerlord Coop Server Manager v0.3.0
 Installed Coop build:       build 2026-10-06 / Mount & Blade II: Bannerlord v1.4.8
 ```
 
 ## Status
 
-**v0.2.2.** Installed and exercised end to end on Ubuntu 26.04 and
+**v0.3.0.** Installed and exercised end to end on Ubuntu 26.04 and
 Debian 13:
 
 - install from nothing: dependency and Docker setup, Workshop download,
@@ -471,6 +471,13 @@ Debian 13:
   its pre-restore safety copy
 - switching between two campaigns and back, each time with a backup
 - save import, scheduled backups, and the diagnostics
+- Workshop mods, with the CoopModPatch set of eight items: added, listed,
+  removed and added again; a real update, and a deliberately broken one
+  that put the previous version back by itself; a player joined and
+  played with them
+- a new server with mods in one command, `coop install --mods`
+- a backup with mods restored on another machine that had none: the mods
+  downloaded, the host's own user IDs kept
 
 The ban list is written where the server reads it and survives updates.
 A refused join has not been observed yet, because that needs a second
