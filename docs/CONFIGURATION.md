@@ -89,6 +89,7 @@ session lives under `state/steam`. See [STEAM.md](STEAM.md).
 | `BACKUP_MAX_TOTAL_GB` | `20` | int | No | Total size cap for the backup directory. Oldest automatic backups are removed first. 0 disables the cap. |
 | `BACKUP_SCHEDULE` | `hourly` | schedule | No | When automatic backups run, as a systemd OnCalendar expression. |
 | `CUSTOM_SOURCE_PATH` | _(empty)_ | path | Install only | Directory holding the server files. Only used when INSTALL_CHANNEL=custom. |
+| `DOTNET_SDK_IMAGE` | `mcr.microsoft.com/dotnet/sdk:10.0` | string | No | Container image used once to build the small startup hook a server with mods needs. Pin it to a digest for reproducible installs. |
 | `GAME_PORT` | `4200` | port | Yes | UDP port players connect to. This is the only port that has to be reachable from the internet. |
 | `INSTALL_CHANNEL` | `workshop` | one of: workshop, custom | Install only | Where the server files come from. 'workshop' downloads from the Steam Workshop; 'custom' installs from a local directory. |
 | `INSTALL_DIR` | `/srv/bannerlordcoop` | path | Install only | Absolute path holding all persistent data for this installation. |
@@ -97,6 +98,7 @@ session lives under `state/steam`. See [STEAM.md](STEAM.md).
 | `LOG_MAX_FILES` | `5` | int | No | Number of rotated container log files to keep. |
 | `LOG_MAX_SIZE` | `50m` | string | No | Maximum size of a single container log file before it rotates. |
 | `MEMORY_LIMIT` | _(empty)_ | string | Yes | Memory limit for the container, e.g. 4g. Empty means no limit. Measured usage is 1.2-1.6 GB. |
+| `MODS` | _(empty)_ | modlist | Yes | Steam Workshop items the server loads as mods, as their IDs in load order. Manage them with 'coop mods'. Empty runs the server exactly as the Coop team ships it. |
 | `PGID` | `1000` | int | Yes | Group ID owning the data directories. |
 | `PUID` | `1000` | int | Yes | User ID owning the data directories and running the server process. |
 | `SAVE_NAME` | `Campaign` | savename | Yes | Campaign save to host. Change it with 'coop campaign use'. A name with no save behind it starts a fresh world, which only happens when one was asked for: at installation, with 'coop campaign new', or with --new-world. |
@@ -142,6 +144,33 @@ Names may contain spaces, up to 64 characters. They become file names for
 a Windows program, so `/ \ : * ? " < > |` are refused, as are names the
 server uses for itself (`default_new_game`, `coop_bug_report`,
 `TransferSave`, anything ending in `.backup1` or `.backup2`).
+
+### `MODS`
+
+Steam Workshop IDs, one space apart, in load order:
+
+```bash
+MODS="2859188632 2859232415 2859222409 2859238197 2859265386 3777470096 3627538517 3786391685"
+```
+
+Empty, the default, runs the server exactly as the Coop team ships it.
+`coop mods add` and `coop mods remove` keep it, and the better way to
+change it is through them, because they also download, back up and
+restart. A hand edit works too: the next start downloads whatever is named
+and missing, and refuses to start with a mod that needs something nobody
+provides. Frameworks such as Harmony are sorted ahead of the game's own
+modules whatever their position here; otherwise the order given is the
+order the server loads them in, except where a mod needs another loaded
+first. [MODS.md](MODS.md) has the rest.
+
+### `DOTNET_SDK_IMAGE`
+
+Only matters with mods. A server with mods needs a small startup hook,
+which is built from `docker/hook` on the server itself the first time, and
+again whenever its source changes. This is the image it is built with,
+Microsoft's .NET SDK. It is downloaded for the build and removed again
+unless it was already there. Pin it to a digest if your builds have to be
+reproducible.
 
 ### `LOGIN_MESSAGE`
 

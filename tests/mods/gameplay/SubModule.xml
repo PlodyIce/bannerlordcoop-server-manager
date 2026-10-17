@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Module>
+  <Id value="GameplayMod" />
+  <Name value="A Gameplay Mod" />
+  <Version value="e1.4.6" />
+  <DependedModules>
+    <DependedModule Id="Native" DependentVersion="v1.4.6" />
+    <DependedModule Id="StoryMode" DependentVersion="v1.4.6" />
+    <DependedModule Id="Bannerlord.Harmony" DependentVersion="v2.4.2" />
+    <DependedModule Id="Bannerlord.MBOptionScreen" DependentVersion="v5.11.4" />
+    <DependedModule Id="SomethingOptional" Optional="true" />
+  </DependedModules>
+  <SubModules>
+    <SubModule>
+      <Name value="A Gameplay Mod" />
+      <DLLName value="Gameplay.dll" />
+      <SubModuleClassType value="Gameplay.SubModule" />
+      <Tags>
+        <Tag key="DedicatedServerType" value="none" />
+        <Tag key="IsNoRenderModeElement" value="false" />
+      </Tags>
+    </SubModule>
+  </SubModules>
+</Module>

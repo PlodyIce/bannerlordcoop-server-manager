@@ -85,9 +85,24 @@ installation_present() {
     [[ -d "$INSTALL_DIR" ]] && { state_exists || server_installed; }
 }
 
+# ------------------------------------------------------------- mods --
+# What was installed for each mod, keyed by Workshop id: module id, name,
+# version, and the Workshop timestamp the update check compares against.
+state_mod_get() {
+    [[ -f "$FILE_STATE" ]] || return 0
+    jq -r --arg w "$1" --arg k "$2" '(.mods // {})[$w][$k] // "" | tostring' "$FILE_STATE" 2>/dev/null
+}
+state_mod_set()    { state_apply '.mods[$w] = $v' --arg w "$1" --argjson v "$2"; }
+state_mod_remove() { state_apply 'del(.mods[$w])' --arg w "$1"; }
+
 # ------------------------------------------------------------ update marker --
 # A small file rather than a field, so the MOTD snippet and other cheap
 # consumers can test for it without parsing JSON.
 update_marker_set()   { date -Is >"$DIR_STATE/update-available"; }
 update_marker_clear() { rm -f "$DIR_STATE/update-available"; }
 update_marker_is_set(){ [[ -f "$DIR_STATE/update-available" ]]; }
+
+# The same for mods; the file lists the Workshop ids with an update.
+mods_update_marker_set()    { printf '%s\n' "$@" >"$DIR_STATE/mods-update-available" 2>/dev/null || true; }
+mods_update_marker_clear()  { rm -f "$DIR_STATE/mods-update-available" 2>/dev/null || true; }
+mods_update_marker_is_set() { [[ -s "$DIR_STATE/mods-update-available" ]]; }

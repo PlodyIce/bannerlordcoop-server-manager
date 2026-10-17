@@ -18,6 +18,7 @@ services:
         PUID: ${COOP_PUID:?COOP_PUID is missing - run coop config --apply}
         PGID: ${COOP_PGID:?COOP_PGID is missing}
         WINE_BRANCH: ${COOP_WINE_BRANCH:-stable}
+        IMAGE_FINGERPRINT: ${COOP_IMAGE_FINGERPRINT:-unknown}
     image: bannerlordcoop/server:${COOP_WINE_BRANCH:-stable}
     container_name: ${COOP_CONTAINER_NAME:?COOP_CONTAINER_NAME is missing}
     restart: unless-stopped
@@ -44,6 +45,11 @@ services:
       # every backup. Z: is how the Windows server sees the container's /.
       COOP_STEAM_BAN_FILE: 'Z:\data\steam-bans.json'
 
+      # A log file per launch in logs/. The official launcher writes it by
+      # itself; a server with mods runs without the launcher, and the
+      # entrypoint writes it instead.
+      COOP_SERVER_LOG_FILE: ${COOP_SERVER_LOG_FILE:-true}
+
     # The only port that has to be reachable from the internet. The Steam
     # game-server ports (UDP 27315/27316) are used locally only.
     #
@@ -62,12 +68,15 @@ services:
       # Read-only on purpose. The server verifies its Coop assemblies with
       # SHA-256 and refuses to start (exit 4) if they differ. What cannot
       # be written cannot drift.
-      - ${COOP_INSTALL_DIR:?COOP_INSTALL_DIR is missing}/server:/server:ro
+      #
+      # server/ as Steam delivered it, or, with mods, runtime/: the same
+      # files linked together with the mods. See lib/mods.sh.
+      - ${COOP_SERVER_DIR:-${COOP_INSTALL_DIR}/server}:/server:ro
 
       # The server's data directory, selected with --data-dir. Saves and
       # logs are separate bind mounts inside it so the manager can back
       # them up and rotate them independently.
-      - ${COOP_INSTALL_DIR}/config:/data
+      - ${COOP_INSTALL_DIR:?COOP_INSTALL_DIR is missing}/config:/data
       - ${COOP_INSTALL_DIR}/saves:/data/Game Saves
       - ${COOP_INSTALL_DIR}/logs:/data/logs
 
@@ -75,6 +84,17 @@ services:
       # user folder inside the Wine prefix, so without this mount it would
       # be lost on every container rebuild.
       - ${COOP_INSTALL_DIR}/coopdata:/home/coop/.wine/drive_c/users/coop/Documents/Mount and Blade II Bannerlord/CoopData
+
+      # The game's Configs folder in Documents. Some mods keep settings,
+      # logs and data of their own there, Improved Garrisons some of it per
+      # campaign, so it is persistent and part of every backup.
+      - ${COOP_INSTALL_DIR}/userconfigs:/home/coop/.wine/drive_c/users/coop/Documents/Mount and Blade II Bannerlord/Configs
+
+      # The engine's own logs and crash reports. When the engine crashes it
+      # loses the end of its console output, and these files are where the
+      # reason is; inside the container they would go with it the next
+      # time it is recreated.
+      - ${COOP_INSTALL_DIR}/logs/engine:/home/coop/.wine/drive_c/ProgramData/Mount and Blade II Bannerlord
 
     # 0 means no limit. Measured usage is 1.2-1.6 GB; a limit protects the
     # host - and with it, SSH - from a runaway process.

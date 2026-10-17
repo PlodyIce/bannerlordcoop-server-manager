@@ -48,9 +48,6 @@ RUN groupadd -g "${PGID}" coop \
  && install -d -o coop -g coop /server /data \
  && install -d -o coop -g coop -m 0700 /home/coop/.runtime
 
-COPY entrypoint.sh coop-cmd healthcheck.sh /usr/local/bin/
-RUN chmod 0755 /usr/local/bin/entrypoint.sh /usr/local/bin/coop-cmd /usr/local/bin/healthcheck.sh
-
 ENV HOME=/home/coop \
     WINEPREFIX=/home/coop/.wine \
     WINEARCH=win64 \
@@ -67,7 +64,22 @@ WORKDIR /server
 # state outside the volumes, so the container stays disposable.
 RUN wineboot --init && wineserver -w
 
+# The scripts come after everything slow. They are what changes when the
+# manager is updated, and placed here a change to them rebuilds seconds'
+# worth of layers instead of the Wine prefix.
+USER root
+COPY entrypoint.sh coop-cmd healthcheck.sh /usr/local/bin/
+RUN chmod 0755 /usr/local/bin/entrypoint.sh /usr/local/bin/coop-cmd /usr/local/bin/healthcheck.sh
+USER coop
+
 HEALTHCHECK --interval=30s --timeout=10s --start-period=300s --retries=3 \
     CMD /usr/local/bin/healthcheck.sh
 
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+
+# A checksum of this directory's scripts and of this file, worked out by
+# the manager. An image whose label differs from the manager's checksum was
+# built from older files, and is rebuilt before the next start, so an
+# updated checkout never runs with a stale entrypoint.
+ARG IMAGE_FINGERPRINT=unknown
+LABEL org.bannerlordcoop.fingerprint="${IMAGE_FINGERPRINT}"

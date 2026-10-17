@@ -17,16 +17,19 @@ Host: Linux, x86_64, headless
      +-- container "bannerlordcoop-<instance>"   long-running
      |   +-- Debian + WineHQ (amd64 + i386)
      |       +-- wine BannerlordCoopServer.exe --data-dir Z:\data
+     |           or, with mods, the engine it starts, directly
      |
      +-- steamcmd container                       throwaway, on demand
 
 /srv/bannerlordcoop: persistent, outside the container
-    server/     -> /server  (read-only)
-    config/     -> /data
-    saves/      -> /data/Game Saves
-    logs/       -> /data/logs
-    coopdata/   -> the Bannerlord user folder inside the Wine prefix
-    workshop/  state/  rollback/  backups/
+    server/       -> /server  (read-only; runtime/ instead with mods)
+    config/       -> /data
+    saves/        -> /data/Game Saves
+    logs/         -> /data/logs
+    coopdata/     -> the Bannerlord user folder inside the Wine prefix
+    userconfigs/  -> the game's Configs folder there, for mods
+    logs/engine/  -> the engine's own logs and crash reports in the prefix
+    workshop/  mods/  runtime/  state/  rollback/  backups/
 ```
 
 The container is disposable. Every piece of state lives on the host and is
@@ -116,7 +119,9 @@ debugging twice.
 | 2 | Load error or timeout |
 | 3 | Runtime failure |
 | 4 | Module verification failed: files under `Modules/Coop` were modified |
+| 5 | The engine crashed. Seen with a mod whose code could not be loaded; the engine's error log in `logs/engine/logs` has the reason |
 | 6 | The build's license terms have not been accepted (Coop v0.1.6 and later) |
+| 82 | The engine gave up while loading its modules; with mods, usually one that cannot run on a dedicated server |
 
 Exit 4 is why `/server` is mounted **read-only**: the server checks its
 Coop assemblies with SHA-256 and refuses to start if they differ. What
@@ -202,6 +207,53 @@ vanish at the next update and be in no backup.
 which is `config/steam-bans.json` on the host. The variable is the one
 that moves only the ban list; `COOP_DATA_DIR` would also move
 `mod-config.json`.
+
+## Mods: the engine without its launcher
+
+`BannerlordCoopServer.exe` is a launcher. It sets up its data directory and
+its console, then starts the game engine as a child process:
+
+```
+cwd  engine\bin\Win64_Shipping_Server
+     engine\dotnet\dotnet.exe TaleWorlds.Starter.DotNetCore.dll
+         _MODULES_*Native*SandBoxCore*Sandbox*Coop*DedicatedServer.Windows*_MODULES_
+         /dedicatedcustomserver 7210 EU 0
+env  DOTNET_ROOT=Z:\server\engine\dotnet  DOTNET_MULTILEVEL_LOOKUP=0
+     BANNERLORD_USER_DIR=Z:\data
+     COOP_DATA_DIR=C:\users\coop\Documents\Mount and Blade II Bannerlord\CoopData
+```
+
+That is what a running official server shows: its process list for the
+command line, and the engine process's own memory for the environment,
+which Wine keeps there rather than in `/proc/<pid>/environ`. The module
+list is fixed in the launcher, and it has no option to extend it. Coop's
+join check, meanwhile, requires every community module on both sides. So a
+server with mods has the entrypoint start the engine exactly as above, with
+the mods added to the list, and the launcher is not involved.
+
+That was only acceptable because the parts that matter turned out to live
+in the engine, in the `DedicatedServer.Windows` module, not in the
+launcher. Measured with Coop v0.1.6:
+
+| | Without the launcher |
+|---|---|
+| License terms | Checked by the engine: the EULA is printed and it exits 6 without an acceptance; with `DS_ACCEPT_EULA=true` it writes `eula.txt` itself |
+| Coop checksum check | Done by the engine, "verified against release pins" |
+| `server-config.json`, port, password | Read by the engine |
+| `@DS@` events, `SERVING`, pulse lines | Printed by the engine |
+| Console: `save`, `players`, `stop` | Read by the engine from stdin; `stop` ends in 2 seconds, exit 0, closing save |
+| A log file per launch | The launcher's. The entrypoint writes it instead |
+
+The rest is about making mods loadable on a machine with no screen, and is
+described in [MODS.md](MODS.md): server copies of their manifests, a
+startup hook that resolves interface libraries from the Coop module,
+because the engine loads Coop after every mod, and a writable `Configs`
+folder. The server runs from `runtime/`, a view of `server/` and `mods/`
+made of hard links, which is rebuilt before every start and never while a
+container has it mounted.
+
+Without mods, none of this happens: the launcher starts the server as the
+Coop team ships it.
 
 ## A new world only on request
 

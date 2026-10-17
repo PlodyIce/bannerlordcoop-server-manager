@@ -120,6 +120,15 @@ update_scheduled() {
     local rc=0
     update_check || rc=$?
 
+    # Mods are checked on the same schedule, and only ever reported:
+    # players get Workshop updates by themselves, so the report is how an
+    # operator learns that the server has fallen behind them.
+    if mods_configured; then
+        if mods_update_check && (( ${#MODS_UPDATES[@]} )); then
+            log "Updates for ${#MODS_UPDATES[@]} mod(s) are available. Install them with 'coop mods update'."
+        fi
+    fi
+
     # 30 means Steam was unreachable - weather, not a failure. The unit
     # declares it a success for exactly this reason.
     (( rc == EX_STEAM )) && return "$EX_STEAM"
@@ -163,6 +172,7 @@ rollback_apply() {
         confirm "Continue?" no || { log "Cancelled."; return 0; }
     fi
 
+    server_refresh_image
     server_stop
     log "Restoring the previous server build"
     rsync -a --delete \
@@ -253,7 +263,9 @@ update_apply() {
         return "$EX_LICENSE"
     fi
 
-    # 3. stop cleanly - this writes a closing save
+    # 3. stop cleanly - this writes a closing save. A runtime image built
+    #    from older files is rebuilt first, while the server still serves.
+    server_refresh_image
     server_stop
 
     # 4. campaign, configuration and gameplay settings first
@@ -307,6 +319,10 @@ update_apply() {
     out_line ""
     out_line "  Every player needs the same Coop build to connect."
     out_line "  The previous build is kept; undo with: coop rollback"
+    if mods_configured; then
+        out_line "  The server runs with its mods. Mods often follow a new Coop build"
+        out_line "  with updates of their own: coop mods update --check"
+    fi
     out_line ""
 }
 

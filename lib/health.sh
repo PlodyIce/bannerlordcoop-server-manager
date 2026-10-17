@@ -78,6 +78,8 @@ status_report() {
             --arg exit_code "$( (( running )) || container_exitcode )" \
             --argjson save_exists "$( campaign_exists "$(cfg SAVE_NAME)" && echo true || echo false )" \
             --argjson campaigns "$(campaign_names | grep -c . || true)" \
+            --argjson mods "$(_backup_mods_json)" \
+            --argjson mods_update "$( mods_update_marker_is_set && echo true || echo false )" \
             '{
                ok:true, status:$status, instance:$instance, server_label:$label,
                save_name:$save, campaign_date:$campaign, players:$players,
@@ -88,6 +90,7 @@ status_report() {
                last_backup:$backup, last_backup_age_seconds:$backup_age,
                update_available:$update, license_accepted:$license,
                save_exists:$save_exists, campaigns:$campaigns,
+               mods:$mods, mods_update_available:$mods_update,
                banned_accounts:(if $bans == "invalid" then null else ($bans | tonumber) end),
                last_exit_code:(if $exit_code == "" or $exit_code == "?" then null else ($exit_code | tonumber) end)
              }'
@@ -135,6 +138,7 @@ status_report() {
     out_kv "Connect to" "$(host_primary_address):$(cfg GAME_PORT)$( [[ -n "$(cfg SERVER_PASSWORD)" ]] && printf '  (password set)' || printf '  (no password)' )"
     out_kv "Install channel" "$( [[ "$(cfg INSTALL_CHANNEL)" == workshop ]] && printf 'Steam Workshop' || printf 'Custom build' )"
     out_kv "Coop build" "$(server_version)"
+    mods_configured && out_kv "Mods" "$(_status_mods_line)"
     out_kv "Manager" "v$MANAGER_VERSION"
 
     out_line ""
@@ -172,7 +176,26 @@ status_report() {
         out_line ""
         out_line "  ${C_YEL}A Workshop update is available${C_OFF}. Install it with: coop update"
     fi
+    if mods_update_marker_is_set; then
+        out_line ""
+        out_line "  ${C_YEL}Mod updates are available${C_OFF}. Players get them by themselves;"
+        out_line "  install them before they are refused: coop mods update"
+    fi
     out_line ""
+}
+
+# "8: Harmony, ButterLib, UIExtenderEx and 5 more", from what was recorded
+# at installation, so status needs no XML tools.
+_status_mods_line() {
+    local names=() n shown=3
+    mapfile -t names < <(_backup_mods_json | jq -r '.[] | .name // .module_id // .workshop_id' 2>/dev/null)
+    n="${#names[@]}"
+    if (( n <= shown + 1 )); then
+        printf '%s: %s' "$n" "$(printf '%s, ' "${names[@]}" | sed 's/, $//')"
+    else
+        printf '%s: %s and %s more. See: coop mods' "$n" \
+            "$(printf '%s, ' "${names[@]:0:$shown}" | sed 's/, $//')" "$(( n - shown ))"
+    fi
 }
 
 # ------------------------------------------------------------------ doctor --
@@ -200,6 +223,7 @@ doctor_run() {
         _doctor_data
         _doctor_steam
         _doctor_server
+        _doctor_mods
         _doctor_backups
     fi
 
@@ -496,6 +520,42 @@ _doctor_server() {
         else
             _hc ok "Server" "Recent log errors" "none in the last 300 lines"
         fi
+    fi
+}
+
+_doctor_mods() {
+    if ! mods_configured; then
+        _hc info "Mods" "Mods" "none, the server runs as the Coop team ships it"
+        return
+    fi
+    local ids=() wid name absent=0
+    mapfile -t ids < <(mods_ids)
+    if command -v xmlstarlet >/dev/null 2>&1; then
+        _hc ok "Mods" "xmlstarlet" "present"
+    else
+        _hc warn "Mods" "xmlstarlet" "missing; installed at the next start, or now: sudo coop mods update"
+    fi
+    for wid in "${ids[@]}"; do
+        name="$(state_mod_get "$wid" name)"
+        if mods_installed "$wid"; then
+            _hc ok "Mods" "${name:-$wid}" "$(state_mod_get "$wid" version), Workshop item $wid"
+        else
+            _hc fail "Mods" "${name:-$wid}" "Workshop item $wid is configured but not installed. Run: sudo coop mods update"
+            absent=1
+        fi
+    done
+    if mods_hook_current; then
+        _hc ok "Mods" "Startup hook" "built from docker/hook"
+    else
+        _hc warn "Mods" "Startup hook" "not built yet, or its source changed; it is built at the next start"
+    fi
+    if (( ! absent )) && [[ -f "$DIR_RUNTIME/coop-launch.txt" ]]; then
+        _hc ok "Mods" "Server view" "runtime/ is in place"
+    elif (( ! absent )); then
+        _hc warn "Mods" "Server view" "runtime/ is missing; it is put together at the next start"
+    fi
+    if mods_update_marker_is_set; then
+        _hc warn "Mods" "Updates" "available on the Workshop. Players get them by themselves: sudo coop mods update"
     fi
 }
 

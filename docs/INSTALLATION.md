@@ -240,6 +240,18 @@ Settings can also come from a file:
 sudo coop install --non-interactive --yes --config /root/instance.env
 ```
 
+Mods can be part of the installation: `--mods` takes Steam Workshop IDs,
+and the frameworks they need are added by themselves. They are downloaded
+and checked before the server first starts, so a problem with one stops
+the installation rather than the server.
+
+```bash
+sudo coop install --default --non-interactive --yes --accept-eula --save-name "Modded" --mods "3786391685 2859265386 3777470096 3627538517"
+```
+
+[MODS.md](MODS.md) says which mods have been tested, and what players
+need.
+
 ## Ports and firewall
 
 Only **UDP 4200** has to be reachable from the internet. The Steam

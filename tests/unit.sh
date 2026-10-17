@@ -14,7 +14,7 @@ set -euo pipefail
 COOP_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 export COOP_ROOT
 cd "$COOP_ROOT"
-for m in common output config state docker server license bans campaign steam compat backup update provision; do
+for m in common output config state docker server license bans campaign steam mods compat backup update provision; do
     # shellcheck source=/dev/null
     . "lib/$m.sh"
 done
@@ -177,6 +177,134 @@ _backup_keep_host_settings this_host >/dev/null 2>&1
 grep -qx 'PUID="999"' "$FILE_CONFIG" || nok "the host's values were not written to server.env"
 pass "a restore keeps this host's directory, instance, user ids and Steam account"
 
+# ------------------------------------------------------------------ mods --
+for good in "" "3786391685" "2859188632 3786391685"; do
+    [[ -z "$(_validate_value MODS "$good")" ]] || nok "a valid mod list was refused: '$good'"
+done
+for bad in "abc" "1  2" " 1" "1 " "1 1" "1;reboot" '$(id)' "1,2"; do
+    [[ -n "$(_validate_value MODS "$bad")" ]] || nok "an unusable mod list was accepted: '$bad'"
+done
+pass "MODS holds Workshop ids, one space apart, each once"
+
+[[ "$(_mods_parse_id 'https://steamcommunity.com/sharedfiles/filedetails/?id=3786391685&searchtext=')" == 3786391685 ]] \
+    || nok "the id was not taken from a Workshop link"
+_mods_parse_id 'https://example.com/?x=1' >/dev/null && nok "a link without an id produced one"
+pass "a Workshop id is taken from an id or a link"
+
+if command -v xmlstarlet >/dev/null 2>&1; then
+    M=tests/mods
+    declare -A W=([harmony]=11 [butterlib]=12 [uiextender]=13 [mcm]=14 [gameplay]=21 [split]=22 [patch]=23 [reserved]=91)
+    mkdir -p "$DIR_MODS"
+    for m in "${!W[@]}"; do cp -r "$M/$m" "$DIR_MODS/${W[$m]}"; done
+    mkdir -p "$DIR_SERVER/engine/Modules/Coop" "$DIR_SERVER/engine/bin/Win64_Shipping_Server"
+    printf '<Module><Id value="Coop" /></Module>\n' >"$DIR_SERVER/engine/Modules/Coop/SubModule.xml"
+    printf 'x' >"$DIR_SERVER/BannerlordCoopServer.exe"
+    mkdir -p "$(dirname "$FILE_HOOK")" && printf 'hook' >"$FILE_HOOK"
+
+    _mods_reset
+    _mods_read 91 "$DIR_MODS/91" && nok "an item claiming a game module's id was accepted"
+    _mods_reset
+    _mods_read 21 "$DIR_MODS/21" && _mods_read 99 "$DIR_MODS/21" && nok "two items with one module id were accepted"
+    pass "items claiming a game module, or another item's module, are refused"
+
+    _mods_scan 21 || nok "$MODS_ERROR"
+    [[ "$(_mods_missing_needs | paste -sd ' ')" == "Bannerlord.Harmony Bannerlord.MBOptionScreen" ]] \
+        || nok "missing dependencies misreported: '$(_mods_missing_needs | paste -sd ' ')'"
+    pass "what a mod needs is found; game modules and optional ones do not count"
+
+    _mods_scan 21 22 23 14 11 12 13 || nok "$MODS_ERROR"
+    _mods_order 21 22 23 14 11 12 13
+    [[ "${MODS_ORDER[*]}" == "11 12 13 14 21 22 23" ]] || nok "wrong load order: ${MODS_ORDER[*]}"
+    pass "frameworks load first, each after what it needs; the rest keep the given order"
+
+    want='_MODULES_*Bannerlord.Harmony*Bannerlord.ButterLib*Bannerlord.UIExtenderEx*Bannerlord.MBOptionScreen*Native*SandBoxCore*Sandbox*GameplayMod*SplitMod*PatchMod*Coop*DedicatedServer.Windows*_MODULES_'
+    [[ "$(mods_module_token)" == "$want" ]] || nok "wrong module list: $(mods_module_token)"
+    pass "the engine's module list: frameworks, the game, the mods, Coop and the server module last"
+
+    mods_build_runtime || nok "$MODS_ERROR"
+    R="$DIR_RUNTIME/engine/Modules"
+    count() { xmlstarlet sel -T -t -v "count($1)" "$2"; }
+    [[ "$(count '/Module/SubModules/SubModule' "$R/Bannerlord.Harmony/SubModule.xml")" == 0 ]] \
+        || nok "a framework kept code on the server"
+    [[ "$(xmlstarlet sel -T -t -m '/Module/SubModules/SubModule' -v 'SubModuleClassType/@value' -n "$R/Bannerlord.MBOptionScreen/SubModule.xml" | paste -sd ' ')" \
+        == "MCM.MCMSubModule MCM.Internal.MCMImplementationSubModule" ]] || nok "MCM's settings core was not kept, or its interface was"
+    pass "frameworks stay in the list without code, except MCM's settings core"
+
+    [[ "$(count '//Tag[@key="DedicatedServerType" or @key="IsNoRenderModeElement"]' "$R/GameplayMod/SubModule.xml")" == 0 && \
+       "$(count '/Module/SubModules/SubModule' "$R/GameplayMod/SubModule.xml")" == 1 ]] \
+        || nok "a mod marked as not for servers would still be skipped"
+    [[ "$(xmlstarlet sel -T -t -m '/Module/SubModules/SubModule' -v 'Name/@value' -n "$R/SplitMod/SubModule.xml")" == "Server half" ]] \
+        || nok "a mod split into halves did not keep exactly its server half"
+    pass "mods marked as not for servers load; a mod split into halves keeps its server half"
+
+    for m in mcm gameplay split; do
+        [[ "$(mods_manifest_value "$R/$(mods_manifest_value "$M/$m" Id)" Id)" == "$(mods_manifest_value "$M/$m" Id)" && \
+           "$(mods_manifest_value "$R/$(mods_manifest_value "$M/$m" Id)" Version)" == "$(mods_manifest_value "$M/$m" Version)" ]] \
+            || nok "the server copy of $m changed its Id or Version, which the join check compares"
+        cmp -s "$M/$m/SubModule.xml" "$DIR_MODS/${W[$m]}/SubModule.xml" || nok "the installed manifest of $m was changed"
+    done
+    [[ "$(stat -c %i "$R/PatchMod/SubModule.xml")" == "$(stat -c %i "$DIR_MODS/23/SubModule.xml")" ]] \
+        || nok "a manifest that needed no change was copied rather than linked"
+    pass "Id and Version are untouched, the installed copies too, and nothing is copied without need"
+
+    [[ -f "$R/GameplayMod/bin/Win64_Shipping_Server/Gameplay.dll" ]] || nok "a client-only mod has no server bin"
+    grep -qxF "MODULES=$want" "$DIR_RUNTIME/coop-launch.txt" || nok "the launch file names other modules"
+    grep -q '^ASSEMBLY_DIRS=Z:\\server\\engine\\Modules\\Coop\\bin\\Win64_Shipping_Server;' "$DIR_RUNTIME/coop-launch.txt" \
+        || nok "the startup hook does not look in Coop's folder first"
+    [[ -f "$DIR_RUNTIME/coop-hook/CoopHook.dll" && -f "$DIR_RUNTIME/BannerlordCoopServer.exe" ]] \
+        || nok "the view lacks the hook or the server"
+    pass "the view has the server, the hook, server bins for every mod, and a launch file that matches"
+
+    printf '%s\r\n' 'Starting new log file...' \
+        '[01:46:41.805] Messagebox [ERROR] message: Cannot load: gameplay.DLL' \
+        '[01:46:41.852] Messagebox [ERROR] message: Cannot load: Missing.Dependency.dll' \
+        '[01:46:41.853] Messagebox [ERROR] message: Cannot load: Missing.Dependency.dll' >"$T/rgl_log_errors_1.txt"
+    [[ "$(mods_engine_errors "$T/rgl_log_errors_1.txt")" == "Messagebox [ERROR] message: Cannot load: Missing.Dependency.dll" ]] \
+        || nok "the engine's error log was not cut down to its reason: '$(mods_engine_errors "$T/rgl_log_errors_1.txt")'"
+    pass "of the engine's error log, only a library the startup hook cannot find either is shown, once"
+
+    _MOD_NAME[21]="My Little Warband (v1.2.6/1.4.6)"; _MOD_NAME[22]="My Little Tavern"
+    _mods_resolve "my little warband" && [[ "$MODS_RESOLVED" == 21 ]] || nok "a name cut short at a word was not found"
+    _mods_resolve "PatchMod" && [[ "$MODS_RESOLVED" == 23 ]] || nok "a module id was not found"
+    _mods_resolve "My Little" && nok "a name two mods begin with picked one of them"
+    _mods_resolve "M" && nok "a fragment of a word picked a mod"
+    pass "mods are found by id, link, module id, name, or a name cut short at a word, never by a fragment"
+
+    first="$(stat -c %i "$DIR_RUNTIME")"
+    mods_build_runtime || nok "$MODS_ERROR"
+    [[ -d "$DIR_RUNTIME" && ! -e "${DIR_RUNTIME}.old" && ! -e "${DIR_RUNTIME}.new" && "$(stat -c %i "$DIR_RUNTIME")" != "$first" ]] \
+        || nok "rebuilding the view left a half state behind"
+    pass "the view is rebuilt beside the old one and swapped in"
+else
+    printf 'skip  mod manifests: xmlstarlet is not installed\n'
+fi
+
+if command -v rsync >/dev/null 2>&1; then
+    src="$(_mods_download_dir 31)"
+    mkdir -p "$src/bin/Win64_Shipping_Client" "$DIR_MODS"
+    printf '<Module />\n' >"$src/SubModule.xml"
+    printf 'v1' >"$src/bin/Win64_Shipping_Client/Mod.dll"
+    cp -a "$src" "$(_mods_dir 31)"
+    touch -d '2001-01-01' "$src/bin" "$src/SubModule.xml"
+    _mods_changed 31 && nok "a download with other times and nothing else counted as an update"
+    printf 'v2' >"$src/bin/Win64_Shipping_Client/Mod.dll"
+    _mods_changed 31 || nok "a file with other contents of the same size went unnoticed"
+    cp -a "$src/." "$(_mods_dir 31)/"
+    rm "$src/bin/Win64_Shipping_Client/Mod.dll"
+    _mods_changed 31 || nok "a file the download no longer has went unnoticed"
+    pass "a mod changed when a file did, came or went; a touched folder is no update"
+fi
+
+mkdir -p "$DIR_MODS/41/bin" "$DIR_MODS/42" "$DIR_MODS/.coop-tmp.kept"
+state_mod_set 41 '{"name":"Gone"}' && state_mod_set 42 '{"name":"Kept"}'
+cfg_set MODS "42"
+mods_prune
+[[ ! -e "$DIR_MODS/41" && -z "$(state_mod_get 41 name)" ]] || nok "a mod MODS no longer names was left installed"
+[[ -d "$DIR_MODS/42" && "$(state_mod_get 42 name)" == Kept && -d "$DIR_MODS/.coop-tmp.kept" ]] \
+    || nok "pruning removed a configured mod, or something that is not a mod"
+cfg_set MODS ""
+pass "after a restore, mods the restored MODS does not name are removed, nothing else"
+
 # --------------------------------------------------------- login message --
 # Rendered the way provision_install_motd renders it, then run with sh, as
 # update-motd would. A path with a quote and a space must survive.
@@ -192,14 +320,18 @@ grep -q "No backup yet" <<<"$out"                          || nok "a missing bac
 grep -q "Overview: coop --install-dir $quirky status" <<<"$out" || nok "the overview command lost the installation's path"
 grep -q "Workshop update" <<<"$out"                        && nok "an update was reported without a marker"
 
+grep -q "Mod updates" <<<"$out"                            && nok "mod updates were reported without a marker"
+
 touch "$quirky/state/update-available" "$quirky/backups/auto-20261013-020252.tar.gz"
+printf '3786391685\n' >"$quirky/state/mods-update-available"
 out="$(sh "$T/motd")"
 grep -q "a Workshop update is available" <<<"$out"          || nok "the update marker was not reported"
+grep -q "Mod updates are available" <<<"$out"               || nok "the mod update marker was not reported"
 grep -q "Last backup: auto-20261013-020252.tar.gz" <<<"$out" || nok "the last backup was not reported"
 [[ -z "$(sh "$T/motd" 2>&1 >/dev/null)" ]]                  || nok "the login message wrote errors"
 
 rm -rf "$quirky"
 [[ -z "$(sh "$T/motd")" ]] || nok "a removed installation still produced a login message"
-pass "the login message reports the marker and the last backup, for any path"
+pass "the login message reports both update markers and the last backup, for any path"
 
 printf '\nAll unit checks passed.\n'

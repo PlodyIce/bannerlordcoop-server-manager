@@ -4,15 +4,17 @@
 #
 # WHAT IS IN A BACKUP
 # -------------------
-# Always the same three directories, because only together do they make a
+# Always the same directories, because only together do they make a
 # playable state:
-#     saves/     the campaign
-#     config/    server.env and the generated server-config.json
-#     coopdata/  mod-config.json, the gameplay settings owned by the mod
+#     saves/        the campaign
+#     config/       server.env and the generated server-config.json
+#     coopdata/     mod-config.json, the gameplay settings owned by the mod
+#     userconfigs/  what mods keep for themselves, some of it per campaign
 #
-# Everything else - the server files, the Workshop download, the rollback
-# copy, the container image - can be produced again from Steam and this
-# repository. These three cannot.
+# Everything else - the server files, the Workshop downloads, the mods, the
+# rollback copy, the container image - can be produced again from Steam and
+# this repository. These cannot. The manifest names the mods a backup was
+# made with, because a campaign played with mods needs them again.
 #
 # NOTE: config/server.env contains the server password. Backups are
 # written 0600 and should be treated as secrets.
@@ -25,7 +27,7 @@
 # filesystem, and only then swapped in by renaming directories - which is
 # instant and, crucially, reversible.
 
-readonly BACKUP_DIRS=(saves config coopdata)
+readonly BACKUP_DIRS=(saves config coopdata userconfigs)
 
 # Settings that describe the host rather than the server: where the
 # installation lives, its name, the numeric ids of the service user, and the
@@ -134,6 +136,9 @@ backup_create() {
     name="${type}-${stamp}.tar.gz"
     archive="$DIR_BACKUPS/$name"
     make_temp_dir "$DIR_BACKUPS" staging
+    # Installations from before mods have no userconfigs/ yet, and tar
+    # fails on a directory that is not there.
+    mkdir -p "$DIR_USERCONFIGS"
 
     _backup_write_manifest "$staging/manifest.json" "$type" "$stamp" "$note"
     _backup_write_readme   "$staging/BACKUP-INFO.txt" "$type" "$stamp" "$note"
@@ -183,12 +188,29 @@ _backup_write_manifest() {
         --arg coop "$(server_version)" \
         --arg manager "$MANAGER_VERSION" \
         --arg channel "$(cfg INSTALL_CHANNEL)" \
+        --argjson mods "$(_backup_mods_json)" \
         '{
             id: $id, type: $type, note: $note, created: $created,
             save_name: $save, server_label: $label, campaign_date: $campaign,
             coop_version: $coop, manager_version: $manager,
-            install_channel: $channel, contents: ["saves","config","coopdata"]
+            install_channel: $channel, mods: $mods,
+            contents: ["saves","config","coopdata","userconfigs"]
         }' >"$file"
+}
+
+# The configured mods, with what was installed of each.
+_backup_mods_json() {
+    local state="{}"
+    [[ -f "$FILE_STATE" ]] && state="$(cat "$FILE_STATE")"
+    jq -c --arg ids "$(cfg MODS)" '
+        [ ($ids | split(" ")[] | select(. != "")) as $w
+          | {workshop_id: $w} + ((.mods // {})[$w] // {} | {module_id, name, version}) ]
+    ' <<<"$state" 2>/dev/null || printf '[]'
+}
+
+# One line per mod for the human-readable description.
+_backup_mods_text() {
+    _backup_mods_json | jq -r '.[] | "  \(.name // .module_id // "?") \(.version // "") (\(.workshop_id))"' 2>/dev/null
 }
 
 _backup_write_readme() {
@@ -204,8 +226,10 @@ Campaign save : $(cfg SAVE_NAME)
 Campaign date : $(pulse_time)
 Coop build    : $(server_version)
 Manager       : $MANAGER_VERSION
+Mods          : $( mods_configured && printf '%s' "$(mods_ids | grep -c .)" || printf 'none' )
+$(_backup_mods_text)
 
-Contents: saves/, config/, coopdata/
+Contents: saves/, config/, coopdata/, userconfigs/
 
 This archive contains config/server.env, which holds the server password.
 Treat it as a secret.
@@ -214,7 +238,7 @@ Restore with:
     coop backup restore $stamp
 
 Or by hand, with the server stopped:
-    tar -xzf <archive> -C <install-dir> saves config coopdata
+    tar -xzf <archive> -C <install-dir> saves config coopdata userconfigs
 EOF
 }
 
@@ -451,7 +475,7 @@ backup_validate() {
             "The archive contains absolute or traversing paths and will not be restored." \
             "This archive is not safe: $(basename "$archive")"
     fi
-    if grep -qvE '^(saves|config|coopdata)(/|$)|^manifest\.json$|^BACKUP-INFO\.txt$' <<<"$members"; then
+    if grep -qvE '^(saves|config|coopdata|userconfigs)(/|$)|^manifest\.json$|^BACKUP-INFO\.txt$' <<<"$members"; then
         fail "$EX_BACKUP" \
             "The archive contains unexpected entries and will not be restored." \
             "Inspect it with: tar -tzf $archive"
@@ -499,6 +523,7 @@ backup_restore() {
     fi
 
     # 3. stop, then take the safety backup while the world is at rest
+    server_refresh_image
     server_stop
     log "Creating a pre-restore safety backup"
     backup_create pre-restore "before restoring $(basename "$archive")" >/dev/null
@@ -527,10 +552,13 @@ backup_restore() {
     #    IDs of wherever it was made; adopting those would leave the
     #    campaign unreadable to the container.
     chown -R "$(cfg PUID):$(cfg PGID)" \
-        "$DIR_SAVES" "$DIR_CONFIG" "$DIR_COOPDATA" 2>/dev/null || true
+        "$DIR_SAVES" "$DIR_CONFIG" "$DIR_COOPDATA" "$DIR_USERCONFIGS" 2>/dev/null || true
 
     # 6. the restored config is now the truth - reload and regenerate.
-    #    The settings that describe this host stay as they were.
+    #    It may name mods this host does not have; the start below
+    #    downloads them, in their current versions, since the Workshop
+    #    keeps no others. The settings that describe this host stay as
+    #    they were.
     CFG=(); config_load
     _backup_keep_host_settings host_values
     config_write_compose_env
@@ -544,8 +572,10 @@ backup_restore() {
     #    failed restore, without anything ever cleaning it up.
     for dir in "${swap_done[@]}"; do rm -rf -- "${dir#*:}"; done
 
-    # 8. start and verify
+    # 8. start and verify. Mods of the replaced state go once the restored
+    #    one serves; the pre-restore backup names them.
     if server_start; then
+        mods_prune
         ok "Restore complete"
         local when; when="$(pulse_time)"
         out_line ""

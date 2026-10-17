@@ -40,8 +40,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install jq
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq jq
+      # xmlstarlet for the mod manifest checks in tests/unit.sh.
+      - name: Install jq and xmlstarlet
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq jq xmlstarlet
 
       # Proves that config/defaults.env and the specification in
       # lib/config.sh describe exactly the same set of settings. Without

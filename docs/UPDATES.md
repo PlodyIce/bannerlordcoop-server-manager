@@ -174,6 +174,11 @@ coop config --set UPDATE_CHECK_ENABLED=false
 When an update is found, a marker is written, and `coop status` and the
 message at an SSH login both show it. A successful `coop update` removes it.
 
+The same run checks the mods, if there are any, and reports updates for
+them the same way. Those matter sooner than a Coop build: Steam updates the
+players' copies of a mod by itself, and a server left on the old version
+refuses them. `coop mods update` installs them; see [MODS.md](MODS.md).
+
 If Steam cannot be reached the service exits 30, which its unit file
 declares a success. An unreachable Steam API is weather, not a failure of
 the timer.
@@ -279,6 +284,14 @@ coop doctor
 And tell your players to update their client. `coop version` prints the
 build both sides need to match.
 
+With mods, check them too. A new Coop build is a common reason for mods to
+update as well, and the update itself rolls back if the server will not
+serve with them:
+
+```bash
+coop mods update --check
+```
+
 The check compares against the build that is actually **installed**, not
 against the last download. After a rollback, or after an update that was
 downloaded but not installed, `coop update --check` therefore still reports
@@ -295,3 +308,11 @@ sudo coop config --apply
 `--apply` regenerates the files the server reads and reinstalls the systemd
 units. Your `server.env` is not touched: new settings fall back to their
 defaults, and settings you have changed keep your values.
+
+The runtime image carries a checksum of the files it was built from. When
+a manager update changes them, the image is rebuilt before the server next
+starts: by `coop restart`, `coop update`, a campaign switch or a change of
+mods while the server still serves, so that players do not wait for it.
+Usually only the scripts changed, which sit last in the image and take
+seconds; when Docker has discarded its build cache, the rebuild installs
+Wine again and takes a few minutes.

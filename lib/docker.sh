@@ -71,8 +71,25 @@ docker_require() {
         "Check: systemctl status docker"
 }
 
+image_name() { printf 'bannerlordcoop/server:%s' "$(cfg WINE_BRANCH)"; }
+
 image_exists() {
-    docker image inspect "bannerlordcoop/server:$(cfg WINE_BRANCH)" >/dev/null 2>&1
+    docker image inspect "$(image_name)" >/dev/null 2>&1
+}
+
+# A checksum of what the image is built from. The image carries it as a
+# label, so an image built from older files can be recognised: a checkout
+# updated with git pull brings a new entrypoint, and the image would
+# otherwise keep running the old one until somebody thought of rebuilding.
+image_fingerprint() {
+    cat "${COOP_ROOT}/docker/Dockerfile" "${COOP_ROOT}/docker/entrypoint.sh" \
+        "${COOP_ROOT}/docker/coop-cmd" "${COOP_ROOT}/docker/healthcheck.sh" 2>/dev/null \
+        | sha256sum | cut -c1-16
+}
+
+image_is_current() {
+    [[ "$(docker image inspect -f '{{ index .Config.Labels "org.bannerlordcoop.fingerprint" }}' \
+            "$(image_name)" 2>/dev/null)" == "$(image_fingerprint)" ]]
 }
 
 # Builds the runtime image. Slow the first time - Wine plus a Wine prefix.
@@ -82,4 +99,19 @@ image_build() {
         "Could not build the runtime image." \
         "Re-run with --verbose to see the build output."
     ok "Runtime image ready"
+}
+
+# The same, for the start of a server: nothing to do when the image is
+# current, and a failure is reported rather than ending the run, because a
+# caller such as an update has to be able to roll back. Usually only the
+# scripts changed, and they sit last in the image: seconds.
+image_refresh() {
+    image_is_current && return 0
+    log "The runtime image was built from older files. Rebuilding it."
+    if ! dc build >/dev/null 2>&1; then
+        warn "Could not rebuild the runtime image."
+        out_line "    See why with a repair, which rebuilds it in full view: sudo coop install"
+        return 1
+    fi
+    ok "Runtime image rebuilt"
 }

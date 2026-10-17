@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Module>
+  <Id value="SplitMod" />
+  <Name value="A Split Mod" />
+  <Version value="v1.0.0" />
+  <SubModules>
+    <SubModule>
+      <Name value="Server half" />
+      <DLLName value="Split.Server.dll" />
+      <SubModuleClassType value="Split.ServerSubModule" />
+      <Tags>
+        <Tag key="DedicatedServerType" value="custom" />
+      </Tags>
+    </SubModule>
+    <SubModule>
+      <Name value="Players half" />
+      <DLLName value="Split.Client.dll" />
+      <SubModuleClassType value="Split.ClientSubModule" />
+      <Tags>
+        <Tag key="DedicatedServerType" value="none" />
+      </Tags>
+    </SubModule>
+  </SubModules>
+</Module>

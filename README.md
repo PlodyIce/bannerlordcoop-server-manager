@@ -39,6 +39,9 @@ coop status
   accepted on your behalf, and asked again when they change.
 - **Keeps bans where they survive.** `coop ban` maintains the server's Steam
   ban list in a place that updates leave alone and backups include.
+- **Runs Workshop mods.** `coop mods add` downloads them, works out what
+  they need, and restarts with a backup first. `coop mods` prints exactly
+  what players have to enable.
 - **Scriptable.** Every command that reports something supports `--json`,
   exit codes distinguish failure classes, and `--non-interactive` never
   hides a prompt.
@@ -238,6 +241,10 @@ More in [docs/STEAM.md](docs/STEAM.md).
 | `coop campaign list` | The campaigns on this server, and which one is hosted |
 | `coop campaign use <name>` | Host another campaign, with a backup first |
 | `coop campaign new <name>` | Start a new world, leaving the others alone |
+| `coop mods` | The installed mods, and what players need |
+| `coop mods add <id>...` | Install Steam Workshop mods |
+| `coop mods remove <id>...` | Remove mods |
+| `coop mods update [--check]` | Install, or check for, newer versions of the mods |
 | `coop ban [<steam64-id>]` | List bans, or ban a Steam account |
 | `coop unban <steam64-id>` | Lift a ban |
 | `coop config` | Edit common settings |
@@ -295,8 +302,11 @@ by default.
 | `config/compose.env` | Generated for Docker Compose. Do not edit. | No |
 | `saves/` | Campaign saves (`.sav` with a matching `.json`) | Yes |
 | `coopdata/mod-config.json` | Gameplay settings, owned by the mod | Yes |
+| `userconfigs/` | What mods keep for themselves | Yes |
+| `mods/` | Installed Workshop mods | No |
+| `runtime/` | The server and its mods, linked together for the server to run from | No |
 | `backups/` | Backup archives and their manifests | — |
-| `logs/` | Server logs and the manager's own log | No |
+| `logs/` | Server logs and the manager's own log; the engine's own logs and crash reports in `logs/engine/` | No |
 | `state/` | Installation metadata, Steam session | No |
 | `server/` | The active server files, mounted read-only | No |
 | `workshop/` | Raw Steam Workshop download | No |
@@ -343,6 +353,25 @@ the server serves again, and both put the previous campaign back if the
 new one will not serve. A name with no campaign behind it is refused, by
 these commands and by every other way of starting the server: the server
 would otherwise quietly create an empty world under the mistyped name.
+
+## Mods
+
+```bash
+sudo coop mods add 3786391685 2859265386 3777470096 3627538517
+coop mods
+```
+
+Steam Workshop mods are installed by their ID or the link to their page.
+The frameworks they need come along by themselves, the server restarts
+with a backup first, and if it will not serve with them, the previous set
+is put back. `coop mods` prints what players have to enable, in which
+order, with links.
+
+The Coop team does not support mods; which ones work is collected by its
+community. The official launcher cannot load mods, so with mods the server
+is started without it, with the license check still in force.
+[MODS.md](docs/MODS.md) explains how, which mods have been tested, and what
+does not work.
 
 ## Banning players
 
@@ -410,6 +439,7 @@ the specific symptoms.
 | [STEAM.md](docs/STEAM.md) | Why an account is needed, Steam Guard, sessions |
 | [UPDATES.md](docs/UPDATES.md) | Update flow, rollback, why updates are manual |
 | [BACKUPS.md](docs/BACKUPS.md) | Contents, types, retention, restore |
+| [MODS.md](docs/MODS.md) | Workshop mods: installing, what players need, how it works |
 | [SAVE-MIGRATION.md](docs/SAVE-MIGRATION.md) | Bringing a campaign from Windows or another host |
 | [TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) | Symptom, cause, check, solution |
 | [ARCHITECTURE.md](docs/ARCHITECTURE.md) | How it works, and why it works that way |

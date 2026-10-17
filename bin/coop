@@ -31,7 +31,7 @@ COOP_ROOT="$(cd "$(dirname "$_self")/.." && pwd)"
 readonly COOP_ROOT
 unset _self _link
 
-for _lib in common output config state docker server license bans campaign steam compat deps backup update provision health; do
+for _lib in common output config state docker server license bans campaign steam mods compat deps backup update provision health; do
     # shellcheck source=/dev/null
     . "${COOP_ROOT}/lib/${_lib}.sh" || { echo "coop: cannot load lib/${_lib}.sh" >&2; exit 1; }
 done
@@ -68,6 +68,13 @@ CAMPAIGNS
     campaign list           The campaigns in saves/, and which one is hosted
     campaign use <name>     Host an existing campaign: backup, then switch
     campaign new <name>     Start a new world, leaving the others alone
+
+MODS
+    mods [list]             Installed mods, and what players need
+    mods add <id|link>...   Install Steam Workshop mods: backup, then restart
+    mods remove <id>...     Remove mods: backup, then restart
+    mods update             Install newer versions of the mods
+      --check                 Only report whether there are any
 
 PLAYERS
     ban [list]              List banned Steam accounts
@@ -391,6 +398,7 @@ cmd_install() {
     out_kv "Next"       "coop status"
     out_line ""
     out_line "  Players join through Direct Connect in the co-op menu."
+    mods_configured && out_line "  They need the same mods, in the same versions. Which: coop mods"
 
     local others; others="$(host_addresses | tail -n +2 | tr '\n' ' ')"
     [[ -n "${others// /}" ]] && out_line "  Other addresses on this host: ${others% }"
@@ -550,6 +558,7 @@ _config_apply_after_change() {
         return 0
     fi
     if confirm "The server must restart for this to take effect. Restart now?" yes; then
+        server_refresh_image
         server_stop && server_start
     else
         log "Restart later with: coop restart"
@@ -689,6 +698,27 @@ cmd_campaign() {
     esac
 }
 
+# coop mods [list] | add <id>... | remove <id>... | update [--check]
+cmd_mods() {
+    local sub="${1:-list}"
+    [[ $# -gt 0 ]] && shift
+    require_installation
+    case "$sub" in
+        list)   mods_cmd_list ;;
+        add)    require_root; acquire_lock "mods add";    mods_cmd_add "$@" ;;
+        remove) require_root; acquire_lock "mods remove"; mods_cmd_remove "$@" ;;
+        update)
+            if [[ "${1:-}" == "--check" ]]; then
+                mods_cmd_check
+            else
+                (( $# == 0 )) || fail "$EX_USAGE" "Unknown option for mods update: $1"
+                require_root; acquire_lock "mods update"; mods_cmd_update
+            fi ;;
+        *) fail "$EX_USAGE" "Unknown mods subcommand: $sub" \
+               "Use: coop mods [list | add <id>... | remove <id>... | update [--check]]" ;;
+    esac
+}
+
 # coop ban [list] | coop ban <steam64-id> [--name "<hero name>"]
 cmd_ban() {
     require_installation
@@ -736,7 +766,7 @@ case "$COOP_COMMAND" in
     start)       require_installation; require_root; acquire_lock start; server_start_or_exit ;;
     stop)        require_installation; require_root; acquire_lock stop; server_stop ;;
     restart)     require_installation; require_root; acquire_lock restart
-                 server_stop; server_start_or_exit ;;
+                 server_refresh_image; server_stop; server_start_or_exit ;;
     save)        require_installation; require_root; server_save || exit "$EX_RUNTIME" ;;
     console)     require_installation
                  (( $# )) || fail "$EX_USAGE" "Usage: coop console <command>   (try: coop console players)"
@@ -759,6 +789,7 @@ case "$COOP_COMMAND" in
     eula)        cmd_eula "$@" ;;
     campaign)    cmd_campaign "$@" ;;
     campaigns)   cmd_campaign list ;;
+    mods)        cmd_mods "$@" ;;
     ban)         cmd_ban "$@" ;;
     unban)       cmd_unban "$@" ;;
     doctor)      doctor_run ;;

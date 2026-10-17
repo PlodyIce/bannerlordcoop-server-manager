@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    The startup hook a server with mods is started with. Built from this
+    source on the server itself, once, by lib/mods.sh: the .NET runtime the
+    dedicated server ships is .NET 6, hence the target.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net6.0</TargetFramework>
+    <AssemblyName>CoopHook</AssemblyName>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Deterministic>true</Deterministic>
+    <!-- .NET 6 is out of support; the server runs it all the same. -->
+    <CheckEolTargetFramework>false</CheckEolTargetFramework>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+  </PropertyGroup>
+</Project>

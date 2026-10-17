@@ -139,12 +139,14 @@ That is a restart-required setting; the command offers one.
 
 ## No backup, but the old disk is readable
 
-Everything that matters is three directories. Copy them off the old disk:
+Everything that matters is three directories, four with mods. Copy them
+off the old disk:
 
 ```
 /srv/bannerlordcoop/saves/
 /srv/bannerlordcoop/config/
 /srv/bannerlordcoop/coopdata/
+/srv/bannerlordcoop/userconfigs/
 ```
 
 Then, on the new host with the server stopped:
@@ -155,6 +157,15 @@ sudo cp -a saves/. /srv/bannerlordcoop/saves/
 sudo cp -a coopdata/. /srv/bannerlordcoop/coopdata/
 sudo chown -R "$(coop config --get PUID):$(coop config --get PGID)" /srv/bannerlordcoop/saves /srv/bannerlordcoop/coopdata
 sudo coop campaign use "MyCampaign"
+```
+
+With mods, install them on the new host before switching to the campaign,
+and copy what they kept for themselves:
+
+```bash
+sudo coop mods add <the Workshop IDs from the old MODS setting>
+sudo cp -a userconfigs/. /srv/bannerlordcoop/userconfigs/
+sudo chown -R "$(coop config --get PUID):$(coop config --get PGID)" /srv/bannerlordcoop/userconfigs
 ```
 
 Do not copy the old `config/` wholesale onto a new installation. It
@@ -179,14 +190,14 @@ now, while nothing is wrong.
 
 ## What is not worth backing up
 
-`server/`, `workshop/`, `rollback/` and the container image all come back
-from Steam and this repository. `logs/` is history, not state. `state/`
-holds installation metadata, the Steam session and the record of which
-license terms were accepted, all of which are recreated by an install, a
-login and an acceptance.
+`server/`, `workshop/`, `rollback/`, `mods/`, `runtime/` and the container
+image all come back from Steam and this repository. `logs/` is history,
+not state. `state/` holds installation metadata, the Steam session and the
+record of which license terms were accepted, all of which are recreated by
+an install, a login and an acceptance.
 
-Only `saves/`, `config/` and `coopdata/` are irreplaceable, which is
-exactly what a backup archive contains.
+Only `saves/`, `config/`, `coopdata/` and `userconfigs/` are irreplaceable,
+which is exactly what a backup archive contains.
 
 ## Testing your recovery
 

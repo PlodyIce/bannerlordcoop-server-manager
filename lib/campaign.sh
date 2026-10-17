@@ -220,6 +220,7 @@ _campaign_switch() {
     previous="$(cfg SAVE_NAME)"
 
     _campaign_confirm_players
+    server_refresh_image
     server_stop
     log "Creating a backup before the switch"
     backup_create manual "$note" >/dev/null

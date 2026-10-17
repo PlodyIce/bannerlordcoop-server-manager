@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Module>
+  <Name value="A Patch" />
+  <Id value="PatchMod" />
+  <Version value="v0.7.1" />
+  <DependedModules>
+    <DependedModule Id="Native" />
+    <DependedModule Id="SandBoxCore" />
+    <DependedModule Id="Sandbox" />
+  </DependedModules>
+  <SubModules>
+    <SubModule>
+      <Name value="A Patch" />
+      <DLLName value="Patch.dll" />
+      <SubModuleClassType value="Patch.SubModule" />
+    </SubModule>
+  </SubModules>
+</Module>

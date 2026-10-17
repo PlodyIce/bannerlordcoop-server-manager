@@ -9,8 +9,11 @@
 # During start-up the campaign load takes minutes on a grown save; that is
 # what compose's start_period covers, and the log-age test is skipped while
 # no log file exists yet.
+#
+# Without mods the official launcher runs the server; with mods the engine
+# runs without it (see docker/entrypoint.sh). Either process counts.
 
-pgrep -f BannerlordCoopServer >/dev/null 2>&1 || exit 1
+pgrep -f 'BannerlordCoopServer|TaleWorlds\.Starter\.DotNetCore' >/dev/null 2>&1 || exit 1
 
 MAX_AGE="${COOP_LOG_MAX_AGE:-300}"
 LOG_DIR=/data/logs

@@ -251,23 +251,80 @@ steam_download() {
         "Run 'coop doctor' and check the log."
 }
 
+# steam_download_items <workshop-id>...
+#
+# Any number of Workshop items in one SteamCMD session: a mod set is often
+# eight items, and eight logins would be eight times the wait. Never
+# prompts, like steam_download. Fails naming the items that did not come.
+steam_download_items() {
+    (( $# )) || return 0
+    docker_require
+    local user; user="$(cfg STEAM_USERNAME)"
+    [[ -n "$user" ]] || fail "$EX_STEAM" \
+        "No Steam account configured." \
+        "Run: coop steam login"
+    steam_session_files_present || fail "$EX_STEAM" \
+        "No Steam session found." \
+        "Authenticate once, then this will run unattended: coop steam login"
+
+    local args=() id out rc=0 missing=()
+    for id in "$@"; do
+        args+=(+workshop_download_item "$(cfg WORKSHOP_APP_ID)" "$id" validate)
+    done
+    log "Downloading $# Workshop item(s)"
+    out="$(_steamcmd -- +login "$user" "${args[@]}" +quit 2>&1 | _steam_clean)" || rc=$?
+    _steam_fix_ownership
+
+    if grep -qiE 'Login Failure|Cached credentials not found|two-factor|Steam Guard|password:' <<<"$out"; then
+        fail "$EX_STEAM" \
+            "The Steam session has expired." \
+            "Re-authenticate once, then retry: coop steam login"
+    fi
+    for id in "$@"; do
+        grep -q "Success. Downloaded item $id " <<<"$out" || missing+=("$id")
+    done
+    if (( ${#missing[@]} )); then
+        printf '%s\n' "$out" | grep -E 'ERROR|Failure' | tail -6 >&2
+        fail "$EX_STEAM" \
+            "Steam did not deliver Workshop item(s) ${missing[*]} (steamcmd exit $rc)." \
+            "Each has to be a Bannerlord Workshop item, not a collection, and visible to your account." \
+            "Steam may also be unreachable. Nothing was changed; retry later."
+    fi
+    ok "Downloaded $# Workshop item(s)"
+}
+
 # ------------------------------------------------------------ installed version --
-# Timestamp of the INSTALLED version, from Steam's own manifest.
-workshop_local_time() {
+# workshop_item_time <workshop-id> - when the downloaded copy of an item was
+# published, from Steam's own manifest.
+workshop_item_time() {
     local acf; acf="$(workshop_manifest)"
     [[ -f "$acf" ]] || { printf '0'; return 0; }
-    grep -A6 "\"$(cfg WORKSHOP_ITEM_ID)\"" "$acf" 2>/dev/null \
+    grep -A6 "\"$1\"" "$acf" 2>/dev/null \
         | sed -n 's/.*"timeupdated"[[:space:]]*"\([0-9]*\)".*/\1/p' \
         | head -1 | grep -E '^[0-9]+$' || printf '0'
+}
+
+# Timestamp of the INSTALLED version, from Steam's own manifest.
+workshop_local_time() { workshop_item_time "$(cfg WORKSHOP_ITEM_ID)"; }
+
+# workshop_details <workshop-id>... - what Steam publishes about the items,
+# as a JSON array. Anonymous, no API key, no login.
+workshop_details() {
+    local args=(-d "itemcount=$#") i=0 id
+    for id in "$@"; do
+        args+=(-d "publishedfileids[$i]=$id")
+        i=$(( i + 1 ))
+    done
+    curl -fsS --max-time 20 \
+        -X POST "https://api.steampowered.com/ISteamRemoteStorage/GetPublishedFileDetails/v1/" \
+        "${args[@]}" 2>/dev/null \
+        | jq -c '.response.publishedfiledetails // empty' 2>/dev/null
 }
 
 # Timestamp of the LATEST version according to Steam. Anonymous, no API key,
 # no login - which is why the nightly check can use it.
 workshop_remote_time() {
-    curl -fsS --max-time 20 \
-        -X POST "https://api.steampowered.com/ISteamRemoteStorage/GetPublishedFileDetails/v1/" \
-        -d "itemcount=1" -d "publishedfileids[0]=$(cfg WORKSHOP_ITEM_ID)" 2>/dev/null \
-        | jq -r '.response.publishedfiledetails[0].time_updated // empty' 2>/dev/null
+    workshop_details "$(cfg WORKSHOP_ITEM_ID)" | jq -r '.[0].time_updated // empty' 2>/dev/null
 }
 
 # -------------------------------------------------------------- custom channel --

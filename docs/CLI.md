@@ -86,8 +86,9 @@ does not count as consent.
 
 `coop start` returns only once the server reports that it is serving, which
 on a grown campaign takes about two minutes. It exits 50 if that never
-happens, 80 if the build's license terms have not been accepted, and 10 if
-`SAVE_NAME` names no campaign and no new world was asked for.
+happens, 80 if the build's license terms have not been accepted, 10 if
+`SAVE_NAME` names no campaign and no new world was asked for, and 40 if the
+runtime image or the mods could not be prepared.
 
 Console commands the server accepts: `status`, `players`, `save`, `say`,
 `kick`, `help`.
@@ -135,6 +136,38 @@ server keeps by itself), `coop_bug_report` and `TransferSave`.
 
 Gameplay settings (`mod-config.json`) are shared by every campaign on the
 server.
+
+## Mods
+
+| Command | Root | Notes |
+|---|---|---|
+| `coop mods` | no | The installed mods, in load order, and what players need. `--json`. Same as `coop mods list` |
+| `coop mods add <id>...` | yes | Install Steam Workshop mods, by ID or link |
+| `coop mods remove <id>...` | yes | Remove mods, by Workshop ID, link, module id or name |
+| `coop mods update` | yes | Install newer versions of the mods |
+| `coop mods update --check` | no | Only report whether there are any. `--json`. |
+
+`add`, `remove` and `update` change the server the way a campaign switch
+does: stop with a closing save, back up, change, start and wait until the
+server serves. If it will not serve, the previous mods, or their previous
+versions, are put back and started. When players are connected, you are
+asked first.
+
+`add` brings the frameworks the new mods need along by itself and refuses,
+changing nothing, when a mod needs something no named item provides.
+`remove` refuses to take away what a remaining mod needs, and asks with a
+default of no, because a campaign played with a mod can carry data of it.
+
+```bash
+sudo coop mods add https://steamcommunity.com/sharedfiles/filedetails/?id=3786391685
+```
+
+```bash
+sudo coop mods remove "My Little Warband"
+```
+
+The mods are the setting `MODS`. [MODS.md](MODS.md) explains what a server
+does with them and what players need.
 
 ## Players
 
@@ -261,7 +294,7 @@ fails rather than proceeding.
 
 Supported by `status`, `doctor`, `config --list`, `backup list`,
 `backup info`, `backup`, `update --check`, `steam status`, `eula`,
-`campaign list`, `ban` and `version`.
+`campaign list`, `mods`, `mods update --check`, `ban` and `version`.
 
 Logs and progress always go to stderr, so stdout carries nothing but the
 JSON document:

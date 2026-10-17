@@ -353,8 +353,8 @@ running, and why an hourly backup of one costs nothing.
 ### "The archive contains unexpected entries and will not be restored"
 
 **Cause.** The archive is not one of ours, or was modified. A restore only
-accepts entries under `saves/`, `config/` and `coopdata/`, with no absolute
-or traversing paths.
+accepts entries under `saves/`, `config/`, `coopdata/` and `userconfigs/`,
+with no absolute or traversing paths.
 
 **Check.**
 ```bash
@@ -362,7 +362,7 @@ tar -tzf /srv/bannerlordcoop/backups/<file>.tar.gz | head
 ```
 
 **Solution.** Use an archive made by `coop backup`. If you trust this one
-and want it anyway, unpack the three directories by hand with the server
+and want it anyway, unpack its directories by hand with the server
 stopped. See [BACKUPS.md](BACKUPS.md).
 
 ### The server will not start after a restore
@@ -470,6 +470,90 @@ itself failed.
 
 ---
 
+## Mods
+
+### A player is refused: "Server does not support module ..."
+
+**Cause.** Coop compares every community mod between server and player,
+versions included. The player runs a mod the server does not, or the other
+way round ("To join the server the module ... is required"), or both run
+it in different versions ("Wrong version of module ..."). The last one
+usually means the Workshop updated the players' copy and not yet the
+server's.
+
+**Check.**
+```bash
+coop mods
+coop mods update --check
+```
+
+**Solution.** The player enables exactly what `coop mods` lists, in that
+order, and nothing else. After a Workshop update: `sudo coop mods update`.
+The message names the module, and [MODS.md](MODS.md) has the full list of
+messages.
+
+### Exit 82 or exit 5 with mods
+
+**Cause.** The engine gave up while loading its modules (82), or crashed
+(5). With mods the usual cause is one that cannot run on a dedicated
+server: it needs the game's interface, or a library the server does not
+have. `coop mods add` and `coop mods update` put the previous set back by
+themselves when this happens, and their message names the engine's error
+log.
+
+A crashing engine loses the end of its console output, so `coop logs`
+stops in the middle of a line and does not show the reason. The engine's
+own logs and crash reports do; they are kept in `logs/engine/`.
+
+**Check.**
+```bash
+sudo bash -c 'tail -n 20 "$(ls -1t /srv/bannerlordcoop/logs/engine/logs/rgl_log_errors_*.txt | head -1)"'
+```
+
+**Solution.** A line such as `Cannot load: <name>.dll` names what was
+missing; the mod that needs it is the one to remove, with
+`sudo coop mods remove <name>`. Look in the community's list for a patch
+that makes it work with Coop.
+
+### "Not starting: Workshop item(s) ... are configured but could not be installed"
+
+**Cause.** `MODS` names a mod that is not installed, typically after a
+restore or a hand edit of `server.env`, and downloading it failed.
+
+**Check.**
+```bash
+coop steam status --probe
+coop doctor
+```
+
+**Solution.** Renew an expired session with `sudo coop steam login`, then
+`sudo coop mods update`. An item that was removed from the Workshop cannot
+come back; take it out of `MODS` with `sudo coop mods remove <id>`.
+
+### "the configured mods need module(s) none of them provides"
+
+**Cause.** A mod depends on another mod that is not installed, and that is
+not one of the frameworks the manager knows where to find.
+
+**Solution.** Find the Workshop item that provides the named module (the
+mod's Workshop page usually lists it under required items) and add it:
+`sudo coop mods add <its ID>`.
+
+### "the startup hook could not be built"
+
+**Cause.** The hook is built once from `docker/hook` with Microsoft's .NET
+SDK image, which needs to be downloaded, about a gigabyte. Usually the
+download failed or the disk is full.
+
+**Check.**
+```bash
+df -h /var/lib/docker
+docker pull "$(coop config --get DOTNET_SDK_IMAGE)"
+```
+
+**Solution.** Free space or fix the network, then `sudo coop start`; the
+build is retried at every start with mods until it succeeds.
+
 ## Permissions
 
 ### "saves/ is owned by 0:0, expected 998:998"
@@ -485,7 +569,7 @@ ls -ln /srv/bannerlordcoop/
 **Solution.**
 ```bash
 cd /srv/bannerlordcoop
-sudo chown -R "$(coop config --get PUID):$(coop config --get PGID)" saves config coopdata logs server
+sudo chown -R "$(coop config --get PUID):$(coop config --get PGID)" saves config coopdata userconfigs logs server
 ```
 
 Leave `state/steam` alone. SteamCMD runs as root, and handing that

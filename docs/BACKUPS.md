@@ -2,21 +2,23 @@
 
 ## What is in a backup
 
-Three directories, always together, because only together do they make a
+Four directories, always together, because only together do they make a
 playable state:
 
 | | |
 |---|---|
 | `saves/` | Every campaign: each `.sav` file with its matching `.json` |
-| `config/` | `server.env`, the generated `server-config.json`, the Steam ban list `steam-bans.json`, and the server's own `eula.txt` |
+| `config/` | `server.env`, the generated `server-config.json`, the Steam ban list `steam-bans.json`, the server's own `eula.txt`, and the mod settings the server hands to players |
 | `coopdata/` | `mod-config.json`, the gameplay settings owned by the mod |
+| `userconfigs/` | What mods keep for themselves, some of it per campaign. Empty without mods |
 
 Plus two descriptions of the archive itself: `manifest.json` for machines
-and `BACKUP-INFO.txt` for people.
+and `BACKUP-INFO.txt` for people. Both name the mods the backup was made
+with, by Workshop ID and version.
 
 Everything else can be produced again from Steam and this repository: the
-server files, the Workshop download, the rollback copy, the container
-image. These three cannot.
+server files, the Workshop downloads, the mods, the rollback copy, the
+container image. These four cannot.
 
 > **A backup archive contains `server.env`, and therefore your server
 > password.** Archives are written with mode `0600`. Treat them as secrets.
@@ -158,8 +160,9 @@ and new campaign files if anything went wrong halfway through. So:
 1. The archive is resolved **within the backup directory only**, never
    from an arbitrary path.
 2. It is validated: a readable gzip tar, no absolute or traversing paths,
-   no entries outside `saves/`, `config/` and `coopdata/`, and a `saves/`
-   directory that actually exists.
+   no entries outside `saves/`, `config/`, `coopdata/` and `userconfigs/`,
+   and a `saves/` directory that actually exists. Archives made before mods
+   have no `userconfigs/`; the current one is then left as it is.
 3. It is unpacked into a staging directory **on the same filesystem**, so
    the step below is a rename rather than a copy.
 4. The contents are checked against the manifest.
@@ -172,6 +175,12 @@ and new campaign files if anything went wrong halfway through. So:
 
 If a rename fails partway through, the ones already done are undone and the
 previous state is put back. There is no half-restored outcome.
+
+The restored `server.env` brings back the mods the backup was made with.
+Mods this host does not have are downloaded when the server starts, in
+their current versions: the Workshop keeps no older ones. Mods installed
+here that the backup does not name are removed once the server serves;
+the pre-restore backup names them, and restoring it downloads them again.
 
 A backup made on another machine carries that machine's `server.env`. A
 few of its settings describe the machine rather than the server: the
@@ -206,12 +215,15 @@ The archive is an ordinary `tar.gz`. If the manager is unavailable, with
 the server stopped:
 
 ```bash
-tar -xzf backup-20260911-004626.tar.gz -C /srv/bannerlordcoop saves config coopdata
+tar -xzf backup-20260911-004626.tar.gz -C /srv/bannerlordcoop saves config coopdata userconfigs
 ```
 
 ```bash
-chown -R bannerlordcoop:bannerlordcoop /srv/bannerlordcoop/saves /srv/bannerlordcoop/config /srv/bannerlordcoop/coopdata
+chown -R bannerlordcoop:bannerlordcoop /srv/bannerlordcoop/saves /srv/bannerlordcoop/config /srv/bannerlordcoop/coopdata /srv/bannerlordcoop/userconfigs
 ```
+
+An archive made before mods has no `userconfigs/`; leave it off both
+commands.
 
 Then start the server. Being able to do this without the tool is a design
 goal, not an accident.

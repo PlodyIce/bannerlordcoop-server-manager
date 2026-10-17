@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Module>
+  <Id value="Bannerlord.UIExtenderEx" />
+  <Name value="UIExtenderEx" />
+  <Version value="v3.0.3" />
+  <DependedModules>
+    <DependedModule Id="Bannerlord.Harmony" DependentVersion="v2.3.3" />
+  </DependedModules>
+  <DependedModuleMetadatas>
+    <DependedModuleMetadata id="Bannerlord.Harmony" order="LoadBeforeThis" version="v2.3.3" />
+    <DependedModuleMetadata id="Native" order="LoadAfterThis" optional="true" version="v1.3.4.*" />
+  </DependedModuleMetadatas>
+  <SubModules>
+    <SubModule>
+      <Name value="UIExtenderEx" />
+      <DLLName value="Bannerlord.UIExtenderEx.dll" />
+      <SubModuleClassType value="Bannerlord.UIExtenderEx.SubModule" />
+    </SubModule>
+  </SubModules>
+</Module>

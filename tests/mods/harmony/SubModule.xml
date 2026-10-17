@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Module>
+  <Id value="Bannerlord.Harmony" />
+  <Name value="Harmony" />
+  <Version value="v2.4.2.248" />
+  <DependedModuleMetadatas>
+    <DependedModuleMetadata id="Native" order="LoadAfterThis" optional="true" version="v1.3.4.*" />
+  </DependedModuleMetadatas>
+  <SubModules>
+    <SubModule>
+      <Name value="Harmony" />
+      <DLLName value="Bannerlord.Harmony.dll" />
+      <SubModuleClassType value="Bannerlord.Harmony.SubModule" />
+    </SubModule>
+  </SubModules>
+</Module>

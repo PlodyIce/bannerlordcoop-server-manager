@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Module>
+  <Id value="Bannerlord.MBOptionScreen" />
+  <Name value="Mod Configuration Menu v5" />
+  <Version value="v5.12.3" />
+  <DependedModules>
+    <DependedModule Id="Bannerlord.Harmony" DependentVersion="v2.2.2" />
+    <DependedModule Id="Bannerlord.ButterLib" DependentVersion="v2.11.1" />
+    <DependedModule Id="Bannerlord.UIExtenderEx" DependentVersion="v2.13.3" />
+  </DependedModules>
+  <DependedModuleMetadatas>
+    <DependedModuleMetadata id="Native" order="LoadAfterThis" version="v1.0.0.*" />
+  </DependedModuleMetadatas>
+  <SubModules>
+    <SubModule>
+      <Name value="MCMv5" />
+      <DLLName value="MCMv5.dll" />
+      <SubModuleClassType value="MCM.MCMSubModule" />
+    </SubModule>
+    <SubModule>
+      <Name value="MCMv5 Basic Implementation" />
+      <DLLName value="MCMv5.dll" />
+      <SubModuleClassType value="MCM.Internal.MCMImplementationSubModule" />
+    </SubModule>
+    <SubModule>
+      <Name value="Bannerlord Module Loader" />
+      <DLLName value="Bannerlord.ModuleLoader.Bannerlord.MBOptionScreen.dll" />
+      <SubModuleClassType value="Bannerlord.ModuleLoader.Bannerlord_MBOptionScreen" />
+    </SubModule>
+  </SubModules>
+</Module>

@@ -18,6 +18,13 @@ workshop/
 server/
 rollback/
 steamcmd/
+/mods/
+/runtime/
+/userconfigs/
+
+# --- Build output of the startup hook, should anybody build it here ------
+docker/hook/bin/
+docker/hook/obj/
 
 # --- Backups and archives -------------------------------------------------
 backups/

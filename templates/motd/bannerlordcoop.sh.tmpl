@@ -19,6 +19,9 @@ if [ -f "$D/state/update-available" ]; then
 else
     printf ' * %s\n' "$TITLE"
 fi
+if [ -s "$D/state/mods-update-available" ]; then
+    printf '   \033[33mMod updates are available\033[0m  ->  %s mods update\n' "$COOP"
+fi
 
 LAST=$(ls -1t "$D"/backups/*.tar.gz 2>/dev/null | head -1)
 if [ -n "$LAST" ]; then

@@ -95,7 +95,8 @@ server_save() {
 # Looked for only in output since <since> (a Unix time), so a refusal left
 # over from an earlier attempt cannot be mistaken for a new one.
 server_license_refused() {
-    docker logs --since "$1" "$CONTAINER_NAME" 2>&1 | grep -q 'EULA acceptance required'
+    docker logs --since "$1" "$CONTAINER_NAME" 2>&1 \
+        | grep -qE 'EULA acceptance required|DS_ACCEPT_EULA=true to accept and persist'
 }
 
 # Waits until the server actually serves clients - not merely until the
@@ -138,6 +139,7 @@ wait_serving() {
 #   0  serving        1  did not reach serving in time
 #   2  exited         4  refused: license terms not accepted
 #   5  not started: it would have created a world nobody asked for
+#   6  not started: the image or the mods could not be prepared
 server_start() {
     local timeout="${1:-600}" since
     docker_require
@@ -150,6 +152,12 @@ server_start() {
     if ! campaign_start_allowed; then
         campaign_explain_refusal
         return 5
+    fi
+
+    # Only for a container about to start. A running one has its files
+    # open, and the view lib/mods.sh rebuilds is what it has mounted.
+    if ! container_running && ! _server_prepare; then
+        return 6
     fi
 
     since="$(( $(date +%s) - 1 ))"
@@ -194,6 +202,64 @@ server_start() {
     esac
 }
 
+# Rebuilds an image made from older files while the server still runs.
+# Called by everything that stops the server only to start it again, so a
+# rebuild after a manager update, which can take minutes when Docker's
+# build cache is gone, is not added to the time players wait. A failure
+# here changes nothing: the start tries again and reports it.
+server_refresh_image() {
+    image_is_current && return 0
+    config_write_compose_env
+    image_refresh || true
+}
+
+# What has to be in place before a container starts: the directories the
+# compose file mounts, owned by the service user rather than by Docker,
+# which would create a missing one as root; an image built from the current
+# files; and with mods, their view of the server.
+_server_prepare() {
+    mkdir -p "$DIR_USERCONFIGS" "$DIR_LOGS/engine" \
+        && chown "$(cfg PUID):$(cfg PGID)" "$DIR_USERCONFIGS" "$DIR_LOGS/engine" 2>/dev/null
+    _server_prune_engine_logs
+    config_write_compose_env
+    image_refresh || return 1
+
+    if mods_configured; then
+        log "Preparing $(mods_ids | grep -c .) mod(s)"
+        if ! mods_prepare_start; then
+            warn "Not starting: $MODS_ERROR."
+            return 1
+        fi
+    elif [[ -e "$DIR_RUNTIME" ]]; then
+        # A view left from mods that are gone. Nothing mounts it any more.
+        rm -rf -- "$DIR_RUNTIME"
+    fi
+    return 0
+}
+
+# The engine starts a new set of logs at every launch and writes a folder
+# per crash, each with a dump. Kept: the newest 30 log files and 5 crashes.
+_server_prune_engine_logs() {
+    local d="$DIR_LOGS/engine" f n
+    n=0
+    while IFS= read -r f; do
+        n=$(( n + 1 ))
+        (( n > 30 )) && rm -f -- "$f"
+    done < <(ls -1t "$d"/logs/*.txt 2>/dev/null)
+    n=0
+    while IFS= read -r f; do
+        n=$(( n + 1 ))
+        (( n > 5 )) && rm -rf -- "$f"
+    done < <(ls -1td "$d"/crashes/*/ 2>/dev/null)
+    return 0
+}
+
+# The newest error log the engine wrote: the engine loses the end of its
+# console output when it crashes, and this file still has it.
+server_engine_errors() {
+    ls -1t "$DIR_LOGS"/engine/logs/rgl_log_errors_*.txt 2>/dev/null | head -1
+}
+
 # For commands that end in a start: the exit code says why it failed.
 server_start_or_exit() {
     local rc=0
@@ -202,6 +268,7 @@ server_start_or_exit() {
         0) return 0 ;;
         4) exit "$EX_LICENSE" ;;
         5) exit "$EX_CONFIG" ;;
+        6) exit "$EX_RUNTIME" ;;
         *) exit "$EX_HEALTH" ;;
     esac
 }
@@ -215,8 +282,13 @@ _explain_exit_code() {
         4) out_line "    Exit 4: the Coop assemblies do not match the release. Files under"
            out_line "            Modules/Coop were modified. Try 'coop update --force' or"
            out_line "            'coop rollback'." ;;
+        5) out_line "    Exit 5: the engine crashed. Its own error log says why:"
+           out_line "            $(server_engine_errors || true)" ;;
         6) out_line "    Exit 6: the license terms of this build have not been accepted."
            out_line "            See: coop eula" ;;
+        82) out_line "    Exit 82: the engine gave up while loading its modules. With mods,"
+            out_line "             the usual cause is a mod that cannot run on a dedicated"
+            out_line "             server. Its error log: $(server_engine_errors || true)" ;;
         137) out_line "    Exit 137: the container was killed. This should not happen with the"
              out_line "              console shutdown path; please report it." ;;
     esac
@@ -229,7 +301,9 @@ exit_code_meaning() {
         2)   printf 'save could not be loaded' ;;
         3)   printf 'failed while running' ;;
         4)   printf 'Coop files modified' ;;
+        5)   printf 'the engine crashed, see logs/engine/logs' ;;
         6)   printf 'license terms not accepted, see: coop eula' ;;
+        82)  printf 'a module could not be loaded, see logs/engine/logs' ;;
         137) printf 'killed' ;;
     esac
 }

@@ -223,6 +223,7 @@ provision_summary() {
     out_kv "Password"          "$( [[ -n "$(cfg SERVER_PASSWORD)" ]] && printf 'set' || printf 'none, anyone with the address can join' )"
     out_kv "Game port"         "UDP $(cfg GAME_PORT)"
     out_kv "Install channel"   "$(cfg INSTALL_CHANNEL)"
+    mods_configured && out_kv "Mods" "$(mods_ids | grep -c .) Workshop item(s), see docs/MODS.md"
     out_kv "Steam account"     "$( [[ -n "$(cfg STEAM_USERNAME)" ]] && cfg STEAM_USERNAME || printf 'not set' )"
     out_kv "Automatic backups" "$( cfg_bool BACKUP_ENABLED && printf '%s, keep %s' "$(cfg BACKUP_SCHEDULE)" "$(cfg BACKUP_KEEP_AUTO)" || printf 'disabled' )"
     out_kv "Update checks"     "$( cfg_bool UPDATE_CHECK_ENABLED && cfg UPDATE_CHECK_SCHEDULE || printf 'disabled' )"
@@ -253,7 +254,7 @@ provision_run() {
     step "Creating the directory layout"
     mkdir -p "$DIR_CONFIG" "$DIR_SAVES" "$DIR_COOPDATA" "$DIR_SERVER" \
              "$DIR_WORKSHOP" "$DIR_ROLLBACK" "$DIR_BACKUPS" "$DIR_LOGS" \
-             "$DIR_STATE" "$DIR_STEAM" \
+             "$DIR_STATE" "$DIR_STEAM" "$DIR_MODS" "$DIR_USERCONFIGS" \
         || fail "$EX_RUNTIME" "Could not create $INSTALL_DIR"
     chown -R "$(cfg PUID):$(cfg PGID)" "$INSTALL_DIR" 2>/dev/null || true
     chmod 0750 "$INSTALL_DIR"
@@ -298,6 +299,34 @@ provision_run() {
         state_set installed_version "$(server_version)"
         state_set workshop_version "$(workshop_local_time)"
         ok "$(server_version)"
+    fi
+
+    # Mods given at installation (--mods): downloaded and checked now, so
+    # that a problem shows here rather than as a server that will not start.
+    # A reconfigure that finds them installed leaves them be.
+    local mod_ids=() missing_mod=0 wid
+    mapfile -t mod_ids < <(mods_ids)
+    for wid in "${mod_ids[@]}"; do mods_installed "$wid" || missing_mod=1; done
+    if (( missing_mod )); then
+        step "Installing ${#mod_ids[@]} mod(s)"
+        mods_require_tools
+        steam_download_items "${mod_ids[@]}"
+        _mods_reset
+        for wid in "${mod_ids[@]}"; do
+            _mods_read "$wid" "$(_mods_download_dir "$wid")" || fail "$EX_CONFIG" "$MODS_ERROR"
+        done
+        _mods_add_needed_frameworks || fail "$EX_CONFIG" "$MODS_ERROR" \
+            "Add the Workshop item that provides each to --mods."
+        mod_ids+=("${MODS_ADDED[@]}")
+        for wid in "${mod_ids[@]}"; do
+            _mods_install_download "$wid" || fail "$EX_RUNTIME" "$MODS_ERROR"
+        done
+        _mods_order "${mod_ids[@]}"
+        cfg_set MODS "${MODS_ORDER[*]}"
+        config_persist "$FILE_CONFIG" MODS
+        config_write_compose_env
+        mods_hook_build || fail "$EX_RUNTIME" "$MODS_ERROR"
+        ok "${#MODS_ORDER[@]} mod(s) installed"
     fi
 
     step "Installing scheduled tasks and the login message"
